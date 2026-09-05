@@ -5,8 +5,8 @@
 
   "2": {
     "class_type": "CLIPVisionLoader",
-    "_comment": "CLIP Vision ViT-bigG — required by FaceID Plus V2 SDXL",
-    "inputs": {"clip_name": "CLIP-ViT-bigG-14-laion2B-39B-b160k.bin"}
+    "_comment": "CLIP Vision ViT-H (1280 dims) — FaceID Plus V2 SDXL needs ViT-H, NOT ViT-bigG (1664 dims). Use CLIP-ViT-bigG only for standard IPAdapter SDXL.",
+    "inputs": {"clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"}
   },
 
   "3": {
