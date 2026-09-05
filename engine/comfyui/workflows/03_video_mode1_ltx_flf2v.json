@@ -20,9 +20,9 @@
 
   "3": {
     "class_type": "CLIPLoader",
-    "_comment": "T5-XXL text encoder for LTX-Video. Download: hf_hub_download('Lightricks/LTX-Video', 'text_encoder/model.safetensors') → models/clip/ltxv_t5xxl.safetensors",
+    "_comment": "T5-XXL text encoder for LTX-Video. Official repo is 4 shards × 5 GB (~19 GB). Use community FP8 single-file instead: hf_hub_download('comfyanonymous/flux_text_encoders', 't5xxl_fp8_e4m3fn.safetensors') → models/clip/ltxv_t5xxl_fp8.safetensors. Also symlink to models/text_encoders/ for CLIPLoader discovery.",
     "inputs": {
-      "clip_name": "ltxv_t5xxl.safetensors",
+      "clip_name": "ltxv_t5xxl_fp8.safetensors",
       "type": "ltxv"
     }
   },
