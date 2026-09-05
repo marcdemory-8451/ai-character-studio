@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+outputs/
+characters/*/loras/*.safetensors
+models/
+library/characters.db
+.DS_Store
+.playwright-mcp/

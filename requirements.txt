@@ -1,0 +1,26 @@
+# Project-level Python dependencies (agent, library, scripts)
+# ComfyUI and training tool deps are managed in their own venvs.
+
+huggingface_hub>=0.23
+diffusers>=0.30
+transformers>=4.42
+accelerate>=0.30
+safetensors>=0.4
+Pillow>=10.0
+numpy>=1.26
+torch>=2.4          # needed for local inference scripts; pin to match ComfyUI venv
+websocket-client>=1.7
+requests>=2.31
+
+# Character library
+# (uses only stdlib sqlite3 — no extra dep)
+
+# Agent
+ollama>=0.2         # Python client for local Ollama
+anthropic>=0.30     # Claude fallback for agent LLM
+
+# Stitching
+# ffmpeg must be installed separately: brew install ffmpeg / apt install ffmpeg
+
+# Optional: captioning
+# joy-caption — installed from HF demo; see prototype/01a_caption_refs.ipynb
