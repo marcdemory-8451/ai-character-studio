@@ -1,0 +1,110 @@
+{
+  "_comment": "Wan VACE 1.3B — Animate-Anything workflow. Takes a reference image and generates an animated clip of it with motion. REQUIREMENTS: Wan2.1-VACE-1.3B/diffusion_pytorch_model.safetensors in diffusion_models/, Wan2.1_VAE.pth in vae/ (via wan_vaes secondary path in extra_model_paths.yaml), models_t5_umt5-xxl-enc-bf16.pth in text_encoders/ (symlinked from Wan model dir). Validated with ComfyUI 0.34.0 + ComfyUI-WanVideoWrapper.",
+
+  "1": {
+    "class_type": "WanVideoModelLoader",
+    "_comment": "Loads Wan VACE 1.3B DiT model. Use main_device on A100 (40GB). Use offload_device on smaller cards.",
+    "inputs": {
+      "model": "Wan2.1-VACE-1.3B/diffusion_pytorch_model.safetensors",
+      "base_precision": "bf16",
+      "quantization": "disabled",
+      "load_device": "main_device"
+    }
+  },
+
+  "2": {
+    "class_type": "WanVideoVAELoader",
+    "_comment": "Wan VAE. Requires precision='bf16' explicitly even though optional (bug in node). Found via wan_vaes secondary path in extra_model_paths.yaml.",
+    "inputs": {
+      "model_name": "Wan2.1_VAE.pth",
+      "precision": "bf16"
+    }
+  },
+
+  "3": {
+    "class_type": "LoadWanVideoT5TextEncoder",
+    "_comment": "Wan T5 encoder. Symlinked from video/Wan2.1-VACE-1.3B/ into local text_encoders/ so it appears in the dropdown.",
+    "inputs": {
+      "model_name": "models_t5_umt5-xxl-enc-bf16.pth",
+      "precision": "bf16"
+    }
+  },
+
+  "4": {
+    "class_type": "WanVideoTextEncode",
+    "_comment": "Text encode. t5 input required — must be wired from LoadWanVideoT5TextEncoder (not auto-loaded from model).",
+    "inputs": {
+      "positive_prompt": "a fantasy warrior woman in silver armor, slow cinematic camera pan, mist swirling, leaves falling, dramatic atmospheric lighting, cinematic",
+      "negative_prompt": "worst quality, inconsistent motion, blurry, deformed, static, ugly",
+      "t5": ["3", 0]
+    }
+  },
+
+  "5": {
+    "class_type": "LoadImage",
+    "_comment": "Reference image. Place in ComfyUI input/ folder before running.",
+    "inputs": {
+      "image": "warrior_ref.png"
+    }
+  },
+
+  "6": {
+    "class_type": "WanVideoVACEEncode",
+    "_comment": "VACE conditioning. ref_images drives animate-anything mode — generates motion from a static reference. num_frames=49 = ~3s at 16fps. Increase for longer clips.",
+    "inputs": {
+      "vae": ["2", 0],
+      "width": 832,
+      "height": 480,
+      "num_frames": 49,
+      "strength": 1.0,
+      "vace_start_percent": 0.0,
+      "vace_end_percent": 1.0,
+      "ref_images": ["5", 0]
+    }
+  },
+
+  "7": {
+    "class_type": "WanVideoSampler",
+    "_comment": "Sampling. steps=20, scheduler=unipc is the recommended baseline. shift=8.0 works well for VACE. force_offload=false on A100 for speed.",
+    "inputs": {
+      "model": ["1", 0],
+      "image_embeds": ["6", 0],
+      "steps": 20,
+      "cfg": 6.0,
+      "shift": 8.0,
+      "seed": 42,
+      "force_offload": false,
+      "scheduler": "unipc",
+      "riflex_freq_index": 0,
+      "text_embeds": ["4", 0]
+    }
+  },
+
+  "8": {
+    "class_type": "WanVideoDecode",
+    "_comment": "Decode latents to frames. enable_vae_tiling helps with VRAM on longer clips.",
+    "inputs": {
+      "vae": ["2", 0],
+      "samples": ["7", 0],
+      "enable_vae_tiling": true,
+      "tile_x": 272,
+      "tile_y": 272,
+      "tile_stride_x": 144,
+      "tile_stride_y": 144
+    }
+  },
+
+  "9": {
+    "class_type": "VHS_VideoCombine",
+    "_comment": "Save to MP4. Match frame_rate to the prompt (VACE generates at ~16fps for 1.3B).",
+    "inputs": {
+      "images": ["8", 0],
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "wan_vace_animate",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}
