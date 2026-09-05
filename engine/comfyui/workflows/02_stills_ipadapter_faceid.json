@@ -1,0 +1,91 @@
+{
+  "_comment": "SDXL + IPAdapter FaceID Plus v2 workflow. REQUIREMENTS: sd_xl_base_1.0.safetensors in checkpoints/, ip-adapter-faceid-plusv2_sdxl.bin + ip-adapter-faceid-plusv2_sdxl_lora.safetensors in ipadapter/, CLIP-ViT-bigG-14-laion2B-39B-b160k.bin (or .safetensors) in clip_vision/, insightface + onnxruntime pip packages. Reference image in ComfyUI input/ folder.",
+
+  "1": {"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"sd_xl_base_1.0.safetensors"}},
+
+  "2": {
+    "class_type": "CLIPVisionLoader",
+    "_comment": "CLIP Vision ViT-bigG — required by FaceID Plus V2 SDXL",
+    "inputs": {"clip_name": "CLIP-ViT-bigG-14-laion2B-39B-b160k.bin"}
+  },
+
+  "3": {
+    "class_type": "IPAdapterModelLoader",
+    "_comment": "Loads the IP-Adapter FaceID model weights",
+    "inputs": {"ipadapter_file": "ip-adapter-faceid-plusv2_sdxl.bin"}
+  },
+
+  "4": {
+    "class_type": "IPAdapterInsightFaceLoader",
+    "_comment": "InsightFace buffalo_l — extracts face embeddings. Auto-downloads on first use.",
+    "inputs": {"provider": "CPU", "model_name": "buffalo_l"}
+  },
+
+  "5": {
+    "class_type": "LoadImage",
+    "_comment": "Reference image containing the face to lock. Place in ComfyUI input/ folder.",
+    "inputs": {"image": "warrior_ref.png"}
+  },
+
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "_comment": "Positive prompt — describe the new scene/pose, NOT the face identity",
+    "inputs": {
+      "text": "same woman, modern city street at night, casual jeans and jacket, rain, neon reflections, cinematic, photorealistic",
+      "clip": ["1", 1]
+    }
+  },
+
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "_comment": "Negative prompt",
+    "inputs": {
+      "text": "lowres, bad anatomy, worst quality, blurry, deformed, different person, fantasy armor",
+      "clip": ["1", 1]
+    }
+  },
+
+  "8": {"class_type":"EmptyLatentImage","inputs":{"width":1024,"height":1024,"batch_size":1}},
+
+  "9": {
+    "class_type": "IPAdapterFaceID",
+    "_comment": "Applies face identity from reference image. Adjust weight (0.6-0.9) for strength vs prompt adherence.",
+    "inputs": {
+      "model": ["1", 0],
+      "ipadapter": ["3", 0],
+      "image": ["5", 0],
+      "weight": 0.8,
+      "weight_faceidv2": 1.0,
+      "weight_type": "linear",
+      "combine_embeds": "concat",
+      "start_at": 0.0,
+      "end_at": 1.0,
+      "embeds_scaling": "V only",
+      "clip_vision": ["2", 0],
+      "insightface": ["4", 0]
+    }
+  },
+
+  "10": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["9", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["8", 0],
+      "seed": 777,
+      "steps": 30,
+      "cfg": 6.5,
+      "sampler_name": "euler",
+      "scheduler": "karras",
+      "denoise": 1.0
+    }
+  },
+
+  "11": {"class_type":"VAEDecode","inputs":{"samples":["10",0],"vae":["1",2]}},
+
+  "12": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["11", 0], "filename_prefix": "ipa_faceid_result"}
+  }
+}
