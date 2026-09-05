@@ -1,0 +1,166 @@
+{
+  "_comment": "LTX-Video 2B FLF2V workflow — first+last frame interpolation. REQUIREMENTS: ltxv-2b-0.9.8-distilled-fp8.safetensors in diffusion_models/, ltxv_vae.safetensors in vae/, ltxv_t5xxl.safetensors in clip/ (download from Lightricks/LTX-Video text_encoder/model.safetensors, ~9.5 GB). Validated with ComfyUI 0.34.0 + ComfyUI-LTXVideo official nodes (kornia>=0.7 required).",
+
+  "1": {
+    "class_type": "UNETLoader",
+    "_comment": "Loads LTX-Video 2B distilled FP8 DiT model",
+    "inputs": {
+      "unet_name": "ltxv-2b-0.9.8-distilled-fp8.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+
+  "2": {
+    "class_type": "VAELoader",
+    "_comment": "LTX-Video VAE — separate from the main model file",
+    "inputs": {
+      "vae_name": "ltxv_vae.safetensors"
+    }
+  },
+
+  "3": {
+    "class_type": "CLIPLoader",
+    "_comment": "T5-XXL text encoder for LTX-Video. Download: hf_hub_download('Lightricks/LTX-Video', 'text_encoder/model.safetensors') → models/clip/ltxv_t5xxl.safetensors",
+    "inputs": {
+      "clip_name": "ltxv_t5xxl.safetensors",
+      "type": "ltxv"
+    }
+  },
+
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "_comment": "Positive prompt — include character trigger token",
+    "inputs": {
+      "text": "a fantasy warrior woman in silver armor, walking through misty forest, dramatic lighting, cinematic motion, photorealistic",
+      "clip": ["3", 0]
+    }
+  },
+
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "_comment": "Negative prompt",
+    "inputs": {
+      "text": "worst quality, inconsistent, blurry, deformed, static, ugly",
+      "clip": ["3", 0]
+    }
+  },
+
+  "6": {
+    "class_type": "LoadImage",
+    "_comment": "Start frame — first keyframe of the clip",
+    "inputs": {
+      "image": "kf_start.png"
+    }
+  },
+
+  "7": {
+    "class_type": "LoadImage",
+    "_comment": "End frame — last keyframe of the clip",
+    "inputs": {
+      "image": "kf_end.png"
+    }
+  },
+
+  "8": {
+    "class_type": "LTXVImgToVideo",
+    "_comment": "Conditions the latent on the START frame (frame 0)",
+    "inputs": {
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "vae": ["2", 0],
+      "image": ["6", 0],
+      "width": 768,
+      "height": 512,
+      "length": 97,
+      "batch_size": 1,
+      "strength": 1.0
+    }
+  },
+
+  "9": {
+    "class_type": "LTXVAddGuide",
+    "_comment": "Adds the END frame as a keyframe guide (frame_idx=-1 = last frame)",
+    "inputs": {
+      "positive": ["8", 0],
+      "negative": ["8", 1],
+      "vae": ["2", 0],
+      "latent": ["8", 2],
+      "image": ["7", 0],
+      "frame_idx": -1,
+      "strength": 1.0
+    }
+  },
+
+  "10": {
+    "class_type": "LTXVConditioning",
+    "_comment": "Applies frame-rate conditioning required by LTX-Video",
+    "inputs": {
+      "positive": ["9", 0],
+      "negative": ["9", 1],
+      "frame_rate": 25.0
+    }
+  },
+
+  "11": {
+    "class_type": "ModelSamplingLTXV",
+    "_comment": "Patches the model with LTX-specific sampling parameters",
+    "inputs": {
+      "model": ["1", 0],
+      "max_shift": 2.05,
+      "base_shift": 0.95
+    }
+  },
+
+  "12": {
+    "class_type": "LTXVScheduler",
+    "_comment": "Creates the noise schedule for LTX-Video",
+    "inputs": {
+      "steps": 20,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": ["9", 2]
+    }
+  },
+
+  "13": {
+    "class_type": "KSampler",
+    "_comment": "Sampling — uses patched model from ModelSamplingLTXV",
+    "inputs": {
+      "model": ["11", 0],
+      "positive": ["10", 0],
+      "negative": ["10", 1],
+      "latent_image": ["9", 2],
+      "seed": 42,
+      "steps": 20,
+      "cfg": 3.5,
+      "sampler_name": "euler",
+      "scheduler": "custom",
+      "denoise": 1.0,
+      "sigmas": ["12", 0]
+    }
+  },
+
+  "14": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["13", 0],
+      "vae": ["2", 0]
+    }
+  },
+
+  "15": {
+    "class_type": "VHS_VideoCombine",
+    "_comment": "Saves to MP4. Adjust frame_rate to match LTXVConditioning frame_rate.",
+    "inputs": {
+      "images": ["14", 0],
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "ltxv_flf2v",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}
