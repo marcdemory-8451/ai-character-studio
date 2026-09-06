@@ -1,7 +1,17 @@
 # Implementation Specs — Overview
 
-Option A: ComfyUI-centric prototype. ComfyUI is the generation engine for all inference;
-ai-toolkit and musubi-tuner handle training as separate jobs. Everything is driven via
+Option A: pure-diffusers Colab-native prototype.
+
+> **Note (2026-09):** the original ComfyUI-centric engine described below is **superseded**.
+> Generation now runs directly in Colab notebooks using diffusers pipelines (no ComfyUI server,
+> tunnel, or workflow JSONs): `prototype/02a` (FLUX stills), `03a`/`03b` (LTX / Wan FLF2V),
+> `04a`/`04b` (Wan-Animate / VACE), `05` (agentic). The base model also moved SDXL →
+> FLUX.1-dev (iteration 2; train via `prototype/01c`). The specs below still describe the per-mode
+> logic (inputs, prompts, fallbacks, data flow) and remain the design of record — only the
+> execution substrate (ComfyUI API) was replaced. `engine/comfyui/` is kept for reference only.
+
+Option A (original): ComfyUI was the generation engine for all inference;
+ai-toolkit and musubi-tuner handle training as separate jobs. Everything was driven via
 ComfyUI's `/prompt` HTTP API or saved workflow UIs.
 
 ## Mode → Spec file map
@@ -18,10 +28,10 @@ ComfyUI's `/prompt` HTTP API or saved workflow UIs.
 
 - All paths are relative to the project root (`video/`).
 - Character IDs are uuid4; library is `library/characters.db` (SQLite).
-- ComfyUI runs on `http://localhost:8188` locally, same port on Colab (exposed via ngrok or
-  cloudflared tunnel).
-- Workflow inputs are injected by patching the JSON `inputs` dict before posting to `/prompt`.
-  See `engine/comfyui/setup/comfy_client.py` for the helper.
+- Generation runs in Colab via diffusers pipelines (see note above). Every generation notebook
+  follows the same header pattern: Drive mount → `DRIVE_BASE`, `HF_HOME` on Drive, HF_TOKEN from
+  Colab Secrets, `uv pip install --system`, VRAM-tiered model loading, long logs to files,
+  outputs + `metadata.json` to Drive.
 - All models use Apache 2.0 or RAIL-M licenses unless explicitly noted.
 
 ## Data flow summary

@@ -1,7 +1,9 @@
 # AI Character Video Studio
 
 Self-hosted pipeline for generating images and video of original fictional characters.
-Option A implementation: ComfyUI-centric, single-user, local + Colab.
+Option A implementation: pure-diffusers Colab-native generation, single-user, local + Colab.
+(Originally ComfyUI-centric; that route was superseded in Phase 1 — see the Colab notebooks
+section below.)
 
 ## Project structure
 
@@ -11,7 +13,8 @@ engine/comfyui/setup/       install scripts + comfy_client.py API helper
 engine/training/            ai-toolkit SDXL configs + musubi-tuner Wan configs
 library/                    SQLite character DB + library.py CRUD helpers
 agent/                      Mode 3 orchestrator (agent.py, scene_planner.py, llm_provider.py)
-prototype/                  Colab notebooks (00-04) for each building block
+prototype/                  Colab notebooks (00-05): 01a/01c training, 02a/03a/03b/04a/04b/05
+                            generation (active); 00/01b/02/03/04 are the deprecated ComfyUI route
 specs/                      Per-mode implementation specs (00-05)
 characters/<name>/          Per-character data: reference-images, captions, loras, samples
 outputs/                    Generated images and videos
@@ -21,8 +24,8 @@ outputs/                    Generated images and videos
 
 | Role | Model | VRAM |
 |---|---|---|
-| Image base | SDXL 1.0 | train: 10–16 GB |
-| Face consistency | IP-Adapter FaceID Plus v2 SDXL | inference |
+| Image base | FLUX.1-dev (guidance-distilled) | ~24 GB BF16 |
+| Face consistency | flux-ip-adapter (XLabs) — optional | inference |
 | Pose control | DWPose (via comfyui_controlnet_aux) | inference |
 | Video keyframe FLF2V | LTX-Video 13B (multi-keyframe) | ~8–10 GB FP8 |
 | Video FLF2V quality | Wan2.1-FLF2V-14B | ~14–24 GB |
@@ -32,33 +35,54 @@ outputs/                    Generated images and videos
 | Image LoRA training | ai-toolkit (ostris) | ~10–16 GB |
 | Video LoRA training | musubi-tuner (kohya) | ~12–24 GB |
 
-## ComfyUI engine
+## Generation engine (Colab-native diffusers)
 
-ComfyUI runs headless at `http://localhost:8188` (local) or behind a cloudflared tunnel (Colab).
-Workflows are posted via `engine/comfyui/setup/comfy_client.py` (`ComfyClient.run_workflow()`).
-All inference is parameterized by patching workflow JSON before submission.
+Generation runs directly in Colab notebooks using diffusers pipelines — no ComfyUI server, no
+tunnel, no workflow JSONs. Each generation block is one notebook (`prototype/02a` … `05`);
+model loading is VRAM-tiered (resident / group-offload / sequential-cpu-offload) and resumable
+states persist to Drive. The old ComfyUI route (`engine/comfyui/`, `comfy_client.py`) is kept
+for reference and the library browser only, not the prototype pipeline.
 
 ## Character library
 
 Characters live in `library/characters.db` (SQLite) + `characters/<name>/` folder tree.
-CRUD via `library/library.py:CharacterLibrary`. One character = one SDXL LoRA (required) +
-optional Wan 2.2 video LoRA.
+CRUD via `library/library.py:CharacterLibrary`. One character = one FLUX.1-dev LoRA (required,
+trained via `01c`, ai-toolkit) + optional video LoRA (Wan / LTX).
 
 ## Agent (Mode 3)
 
 `agent/agent.py:Agent.run(character_name, prompt)` — state machine, resumable on failure.
 LLM provider is swappable: Ollama (default, local Qwen/Llama) or Claude (set `ANTHROPIC_API_KEY`).
 
-## Colab notebooks (run in order to validate each block)
+## Colab notebooks
 
-| Notebook | Purpose | GPU |
-|---|---|---|
-| `prototype/00_phase0_comfyui_setup.ipynb` | Install ComfyUI + nodes + download models | A100 |
-| `prototype/01a_caption_refs.ipynb` | Auto-caption reference images | T4 |
-| `prototype/01b_train_sdxl_lora.ipynb` | Train SDXL character LoRA | A100 |
-| `prototype/02_test_stills.ipynb` | Test stills via ComfyUI API | A100 |
-| `prototype/03_test_video_mode1.ipynb` | Test LTX-Video keyframe interpolation | A100 |
-| `prototype/04_test_video_mode2.ipynb` | Test Wan Animate character replacement | A100 80GB |
+**Generation route: ComfyUI is superseded.** The headless-server + tunnel + workflow-JSON route
+proved fragile, so generation is now pure-diffusers Colab-native (no server, no tunnel, no custom
+nodes). The old ComfyUI notebooks (`00`, `02`, `03`, `04`) are kept for reference but
+**deprecated — use the new numbered set below**. `engine/comfyui/` remains for the library browser
+and any future ComfyUI revival, not for the prototype pipeline.
+
+| Notebook | Purpose | Route | GPU |
+|---|---|---|---|
+| `prototype/00_phase0_comfyui_setup.ipynb` | ~~ComfyUI + nodes + models~~ | ⚠️ deprecated | A100 |
+| `prototype/01a_caption_refs.ipynb` | Auto-caption reference images | active | T4 |
+| `prototype/01b_train_sdxl_lora.ipynb` | ~~Train SDXL LoRA~~ (superseded by 01c) | ⚠️ deprecated | A100 |
+| `prototype/01c_train_flux_lora.ipynb` | Train FLUX.1-dev character LoRA (ai-toolkit, uv venv) | active | A100 40GB+ |
+| `prototype/02_test_stills.ipynb` | ~~Stills via ComfyUI API~~ | ⚠️ deprecated | A100 |
+| `prototype/02a_test_stills_flux.ipynb` | FLUX.1-dev stills + LoRA, VRAM-tiered, commented alternates (Redux/Kontext/schnell/fill) | active | A100 |
+| `prototype/03_test_video_mode1.ipynb` | ~~LTX via ComfyUI~~ | ⚠️ deprecated | A100 |
+| `prototype/03a_test_video_mode1_ltx.ipynb` | LTX-Video 0.9.8-13B multi-keyframe FLF2V + latent upscale, resumable, commented alternates (2B/GGUF/fp8) | active | A100 |
+| `prototype/03b_test_video_mode1_wan_flf2v.ipynb` | Wan2.1-FLF2V-14B 720p first/last-frame (quality tier), resumable | active | A100 |
+| `prototype/04_test_video_mode2.ipynb` | ~~Wan Animate via ComfyUI~~ | ⚠️ deprecated | A100 80GB |
+| `prototype/04a_test_video_mode2_animate.ipynb` | Wan2.2-Animate-14B character replacement (official preprocessing venv + diffusers pipeline) | active | A100 80GB |
+| `prototype/04b_test_video_mode2_vace.ipynb` | Wan VACE 1.3B swap-anything (SAM2-tracked mask + reference image) | active | A100 40GB+ |
+| `prototype/05_agentic_video.ipynb` | Mode 3: resumable state machine, local Ollama LLM (Claude API commented), FLUX keyframes → LTX clips → ffmpeg stitch | active | A100 |
+
+**Shared notebook conventions** (all active notebooks): mount Drive → `DRIVE_BASE =
+/content/drive/MyDrive/ai_character_studio`; `HF_HOME` on Drive so ~24 GB FLUX download survives
+resets; HF_TOKEN from Colab Secrets; `uv pip install --system` for inference (isolated venv only
+for 01c/04a where the repo pins its own deps); long logs/downloads to files, never an unread
+pipe; outputs + `metadata.json` logging to Drive.
 
 ## License reminder
 
@@ -72,6 +96,9 @@ LLM provider is swappable: Ollama (default, local Qwen/Llama) or Claude (set `AN
 - [x] Phase 0 — Environment (install scripts + Colab setup notebook)
 - [x] Phase 1 scaffolded — validation notebooks ready to run
 - [ ] Phase 1 — Actually run and validate each block (needs GPU)
+- [x] FLUX switch (iteration 2) — SDXL→FLUX.1-dev character LoRA; SDXL route kept but deprecated
+- [x] ComfyUI route replaced — pure-diffusers Colab-native generation notebooks (02a–05)
 - [ ] Phase 2 — Thin library browser (Gradio app)
-- [ ] Phase 3 — FLUX vs SDXL decision based on Phase 1 results
+- [x] Phase 3 — FLUX vs SDXL decision: **FLUX wins** (realism/likeness/steerability), decided
+      pre-validation; SDXL kept as the low-VRAM/cheap fallback
 - [ ] Phase 4 — Option B product architecture
