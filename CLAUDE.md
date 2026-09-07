@@ -79,10 +79,14 @@ and any future ComfyUI revival, not for the prototype pipeline.
 | `prototype/05_agentic_video.ipynb` | Mode 3: resumable state machine, local Ollama LLM (Claude API commented), FLUX keyframes → LTX clips → ffmpeg stitch | active | A100 |
 
 **Shared notebook conventions** (all active notebooks): mount Drive → `DRIVE_BASE =
-/content/drive/MyDrive/ai_character_studio`; `HF_HOME` on Drive so ~24 GB FLUX download survives
-resets; HF_TOKEN from Colab Secrets; `uv pip install --system` for inference (isolated venv only
+/content/drive/MyDrive/ai_character_studio`; **models download straight to local `/content`
+(e.g. `/content/flux_dev`, `/content/ltx_13b`) via resumable `snapshot_download` — NO Drive
+mirror of models and `HF_HOME` on local `/content/hf_cache`**, because a Drive-backed HF cache
+corrupts large gated models (FUSE atomic-rename) and the `cp -rn` Drive mirror produced
+partial/corrupt copies that broke loads (re-downloading each session is the deliberate trade);
+HF_TOKEN from Colab Secrets; `uv pip install --system` for inference (isolated venv only
 for 01c/04a where the repo pins its own deps); long logs/downloads to files, never an unread
-pipe; outputs + `metadata.json` logging to Drive.
+pipe; outputs + `metadata.json` logging to Drive (small files — safe).
 
 ## License reminder
 
