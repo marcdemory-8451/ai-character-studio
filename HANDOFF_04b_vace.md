@@ -20,26 +20,47 @@ Pure-`diffusers` `WanVACEPipeline` on Colab.
 5. **Load `WanVACEPipeline` + run** — `video=source frames`, `mask=mask frames`, `reference_images=[char]` → swapped clip. VAE fp32, transformer bf16, resident ≥30 GB else group offload.
 6. Metadata log. 7. Commented alternates (14B @ 720p, DWPose control, first/last-frame, conditioning_scale knob).
 
-## Current status (2026-09-20)
-**This notebook had a FULL session reset (new GPU) during testing**, so `/content` was wiped and inputs re-uploaded.
+## Current status (2026-09-20, session 2)
 
-**Working:**
-- Cells 1 (config+mount) ✅, 2 (upload `walking-down-street.mp4` + reference) ✅ on the current runtime.
-- Earlier on a prior runtime, the install completed and reached SAM2 tracking — which surfaced the import-shadowing bug (now fixed).
+**Working (verified this session):**
+- Cells 1 (config+mount) ✅, 2 (upload `walking-down-street.mp4` + reference) ✅.
+- Cell 3 install: pip/uv installs, SAM2 editable build, and the 898 MB SAM2.1 checkpoint
+  download all succeed. The ONLY remaining failure was the final `sam2 OK` verify import
+  (the shadow guard) — **now fixed by `515ed70`, awaiting a re-run to confirm.**
 
-**Last known failure (now fixed, needs verify):**
-- Cell 3 install errored at the SAM2 checkpoint download: `RepositoryNotFoundError: 404 ... facebook/sam2 ... sam2.1_hiera_large.pt`. Wrong repo id. **Fix pushed** (commit `905a31a`): use `facebook/sam2.1-hiera-large`.
+**Fixed this session (all on `main`, pushed — the notebook opened from GitHub `main`):**
+- Cell 4 (SAM2 tracking) had 4 latent API-misuse crashes (never reached before — earlier
+  runs died at the checkpoint/import bugs). Rewrote against SAM2 + diffusers source.
+- The SAM2 import-shadow guard was still firing even with the `sam2_repo` clone name.
 
-**Immediate next step:** reload the Colab tab to pull `905a31a`, re-run cell 3 (install → should end with `... | sam2 OK`), then cell 4 (SAM2 mask — **review the mask montage**; if it misses the walking subject, adjust `PT`), then cell 5 (VACE load + swap — never run yet, the real unknown to validate).
+**⏭️ IMMEDIATE NEXT STEP (pick up here):**
+1. **Hard-reload the Colab tab** (Cmd+R → "Leave") to pull `515ed70`. Runtime + uploads persist.
+2. Re-run **cell 3** → must end with `torch … | diffusers … | sam2 OK` (this was the failing line).
+3. Run **cell 4** (SAM2 mask) → expect frame count, `tracked 0/…`, and the **mask montage**.
+   **Review the montage**: the white region must cover the walking person. If it misses/drifts,
+   change `PT = (x, y)` (normalized 0–1) in the cell to sit on the subject in frame 0, re-run.
+4. Run **cell 5** (`code5` load + `code6` swap) — **NEVER RUN YET; the real unknown.** Watch for:
+   - `from diffusers import WanVACEPipeline` / `AutoencoderKLWan` resolving on the pinned
+     `diffusers>=0.35.0`. If `ImportError`, install diffusers from git main (like 04a) and reload.
+   - VRAM strategy: A100-80GB → resident; smaller → group offload (both coded in `code5`).
+   - Output `{ts}_swap.mp4` in `VID_OUT` on Drive. Then cell 6 logs metadata.
+5. If quality is off: `conditioning_scale` 0.5–0.8 (§7D), or step up to VACE-14B @ 720p (§7A).
+
+**Cell 5 (VACE call) was audited against diffusers `WanVACEPipeline` source and is believed
+correct** (`video`/`mask`/`reference_images`/`conditioning_scale`; white=regenerate matches) —
+no code change made, but it is unvalidated on GPU.
 
 ## Fixes already applied (all on `main`)
 | Commit | Fix |
 |---|---|
-| `adea5c9` | clone SAM2 to `/content/sam2_repo` (NOT `/content/sam2` — from cwd `/content`, a `sam2` dir shadows the installed package → `No module named 'sam2.build_sam'`); use Hydra config **name** `configs/sam2.1/sam2.1_hiera_l.yaml` (not a filesystem path — configs live in `sam2/configs/`) |
+| `adea5c9` | clone SAM2 to `/content/sam2_repo`; use Hydra config **name** `configs/sam2.1/sam2.1_hiera_l.yaml` |
 | `905a31a` | SAM2 checkpoint repo id → `facebook/sam2.1-hiera-large` (was `facebook/sam2`, a 404) |
+| `fad86cc` | Cell 4 rewrite — correct SAM2 API: init_state needs a **JPEG-frame dir** (not numpy) → writes `/content/sam2_frames/<i>.jpg`; `add_new_points_or_box` needs `obj_id=1` + np arrays; `propagate_in_video` is a **generator over all frames**; masks are **logits** → threshold `>0`; trim to Wan-legal `4k+1` |
+| `f744a27` | (superseded) tried `chdir` into repo before import — a **no-op in Colab** (sys.path holds the literal `/content`, not `''`) |
+| `515ed70` | SAM2 shadow guard fixed properly: editable install makes `sam2` a **namespace pkg** whose `__path__[0]` is the repo root; `build_sam.py` raises because `repo_root/sam2` exists. Fix: `import sam2` (guard-free), prune `__path__` to entries whose basename==`sam2`, then import `build_sam`. In cells 3 + 4. |
 
 ## Known gotchas / facts
-- **Import shadowing:** never clone SAM2 to `/content/sam2`; the repo root is a namespace package that shadows the pip-installed `sam2` when cwd is `/content`.
+- **SAM2 import-shadow guard (the real story):** `build_sam.py` raises `RuntimeError("running from the parent directory of the sam2 repo")` when `os.path.isdir(os.path.join(sam2.__path__[0], "sam2"))`. The `pip install -e` editable install makes `sam2` a **namespace package** whose `__path__` includes the repo ROOT (`/content/sam2_repo`) as `__path__[0]`, and `repo_root/sam2` exists → guard fires. `chdir` does NOT help in Colab (sys.path holds the literal `/content`, not the dynamic `''`). The working fix (`515ed70`): `import sam2` (its `__init__` is guard-free, only inits hydra), then `sam2.__path__ = [p for p in sam2.__path__ if os.path.basename(p)=='sam2']`, THEN `from sam2.build_sam import ...`.
 - **SAM2 config:** `build_sam2_video_predictor` wants a Hydra config *name* resolved via the `sam2` package's registered search path, not an absolute path.
 - **SAM2 checkpoint/config pairing:** 2.1 checkpoint (`sam2.1_hiera_large.pt`) ↔ 2.1 config (`sam2.1_hiera_l.yaml`) — already matched correctly.
 - **VACE mask convention:** BLACK = preserve/condition, WHITE = regenerate.
