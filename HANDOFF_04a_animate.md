@@ -20,16 +20,26 @@ pure-`diffusers` `WanAnimatePipeline` on Google Colab (A100).
 6. **Load pipeline + run** — `WanAnimatePipeline.from_pretrained("...-Diffusers")`, VAE fp32, transformer bf16, `mode="replace"`, group-offload on A100-40 / resident on A100-80.
 7. Metadata log. 8. Commented alternates (animate mode, relighting LoRA, CFG, LightX2V, own-mask).
 
-## Current status (2026-09-20)
+## Current status (2026-09-20, session 2)
 **Working:**
-- Cells 1–2 (config, upload) ✅ on the current runtime. Uploaded inputs: `walking-down-street (1).mp4` (source) + `reference (1).png` (Yuna still). *(Test inputs; source is a Pixabay clip, ref is a Yuna generation.)*
-- Cell 3 install ✅ — venv builds, torch 2.6.0+cu124 in venv, SAM2/decord/peft/etc. install, system diffusers from git main, `cuda True`.
-- Cell 4 download ✅ — `snapshot_download` pulled `process_checkpoint/*` (3.98 GB) successfully.
+- Cells 1–2 (config, upload) ✅. Uploaded inputs: `walking-down-street (1).mp4` (source) + `reference (1).png` (Yuna still). *(Test inputs; source is a Pixabay clip, ref is a Yuna generation.)*
+- Cell 3 install ✅ — venv builds, torch 2.6.0+cu124 in venv, system diffusers from git main, `cuda True`.
+- Cell 4 download ✅ — `snapshot_download` pulled `process_checkpoint/*` (3.98 GB).
 
-**Last known failure (now fixed, needs verify):**
-- Preprocessing (`preprocess_data.py`) exited 1 with `ModuleNotFoundError: No module named 'moviepy'`. `moviepy` is imported by `process_pipepline.py` but is NOT in Wan2.2's requirements. **Fix pushed** (commit `3808421`): added `moviepy imageio-ffmpeg` to the venv install.
+**Preprocessing debug — walked through three sequential crashes this session, each fixed & pushed:**
+1. `ModuleNotFoundError: moviepy` → fixed `3808421` (added `moviepy imageio-ffmpeg` to venv). Verified gone.
+2. `ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value` — Colab exports `MPLBACKEND=inline`, invalid in the venv subprocess (matplotlib raises at import via `human_visualization.py`) → fixed `970a1ba` (set `env['MPLBACKEND']='Agg'` for the subprocess). Verified gone.
+3. `hydra.errors.MissingConfigException: Cannot find primary config 'sam2_hiera_l.yaml'` — SAM2 was installed **non-editable** (we stripped `-e` in `adc43d6`), which drops the `sam2_configs/*.yaml` package data → `build_sam2` can't find its Hydra config → fixed `c0cab9a` (clone pinned SAM2 commit to `/content/sam2_repo`, install **editable from local path**). **NOT yet verified — this is where we stopped.**
 
-**Immediate next step:** reload the Colab tab to pull `3808421`, re-run cell 3 (venv rebuild now includes moviepy), then cell 4. Expect the 4 `src_*.mp4` outputs. Then run cells 5→6 (first full inference has never run yet — that's the real unknown to validate: VRAM/offloading + `mode="replace"` output quality).
+**Immediate next step (pick up here):**
+1. Reload the Colab tab (Cmd+R) to pull `c0cab9a`.
+2. Re-run **cell 3** (install cell changed — venv rebuild + SAM2 clone/editable-build, adds ~1–2 min). Wait for `envs ready…` + `torch … | cuda True`.
+3. Re-run **cell 4** (preprocess). Expect SAM2 to load and all four `src_*.mp4` → `OK`.
+   - If cell 4 throws `NameError: WAN22` etc., the reload reset the kernel namespace → run cells 1→2 (re-upload) before 3→4.
+   - If it dies at a *new* preprocessing stage (det / pose2d / face), that's fresh — SAM2 was the last import gate, so a different-stage error means we're deeper in.
+4. **Then the real unknown, never run yet:** cell 5 (mask montage review) → cells 6+7 (`WanAnimatePipeline` load + `mode="replace"` inference). Validate VRAM/offloading (A100-40 group-offload vs A100-80 resident) and output quality (Yuna replacing the source walker, background/motion preserved).
+
+**Definition of done:** cell 7 writes `{ts}_replace.mp4` to `VID_OUT` on Drive; the video shows the source person replaced by Yuna with original scene/motion intact.
 
 ## Fixes already applied (all on `main`)
 | Commit | Fix |
@@ -39,6 +49,8 @@ pure-`diffusers` `WanAnimatePipeline` on Google Colab (A100).
 | `2e7e802` | `uv venv --clear` (old venv caused an interactive "replace?" hang); **diffusers from git main** (`WanAnimatePipeline` not in a stable release yet); **`mode="replace"`** on the inference call (default is `"animate"` — would ignore bg/mask = wrong output) |
 | `adc43d6` | in-process `snapshot_download` instead of `huggingface-cli` subprocess; strip `-e` from the SAM2 git req (uv rejects editable git sources → SAM2 was silently not installing, which aborted the WHOLE animate-reqs install) |
 | `3808421` | add `moviepy` + `imageio-ffmpeg` to venv |
+| `970a1ba` | preprocess subprocess: force `MPLBACKEND=Agg` (Colab's inline backend is invalid in the venv → matplotlib crashes at import) |
+| `c0cab9a` | install SAM2 **editable** from a local clone of the pinned commit — non-editable install drops `sam2_configs/*.yaml`, breaking `build_sam2`'s Hydra config lookup |
 
 ## Known gotchas / facts
 - `preprocess_data.py --replace_flag` reads only `process_checkpoint/{det,pose2d,sam2}` — the full 28 GB model is NOT needed for preprocessing (inference uses the separate `-Diffusers` repo).
